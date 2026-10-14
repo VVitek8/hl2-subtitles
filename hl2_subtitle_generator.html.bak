@@ -1,0 +1,1518 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>HL2 Subtitles — генератор команд</title>
+<link href="https://fonts.cdnfonts.com/css/minecraft-4" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root { --bg:#1b1b1b; --fg:#e6e6e6; --acc:#ffaa00; --box:#2a2a2a; --seg:#1a1a1a; }
+  * { box-sizing: border-box; font-family: 'Minecraft', 'Consolas', monospace; }
+  body { margin: 0; padding: 24px; background: var(--bg); color: var(--fg); }
+  h1 { color: var(--acc); margin-top: 0; font-size: 22px; }
+  h2 { color: var(--acc); margin: 0 0 6px; font-size: 18px; }
+  .layout { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; max-width: 1400px; margin: auto; }
+  .panel { background: var(--box); padding: 16px; border-radius: 8px; }
+  .panel.wide { grid-column: 1 / -1; }
+  label { display: block; margin-top: 10px; font-size: 13px; color: #aaa; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; padding: 6px 8px; background: #111; color: #eee;
+    border: 1px solid #444; border-radius: 4px; font-size: 13px;
+  }
+  textarea { resize: vertical; min-height: 42px; font-family: inherit; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+  button.main { margin-top: 16px; width: 100%; padding: 12px; background: var(--acc); color: #000; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 15px; font-family: inherit; }
+  button.main:hover { filter: brightness(1.15); }
+  button.sec { background: #234; color: #8cf; border: 1px solid #357; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  button.sec:hover { background: #345; }
+  .hint { font-size: 11px; color: #777; margin-top: 4px; }
+  #output { width: 100%; min-height: 110px; background: #111; color: #6cf; border: 1px solid #444; border-radius: 4px; padding: 10px; font-size: 11px; margin-top: 8px; font-family: 'Consolas', monospace; word-break: break-all; }
+  .fmt-btns button { background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; margin: 2px; cursor: pointer; font-family: inherit; font-size: 11px; }
+  .fmt-btns button:hover { background: #444; }
+
+  #gameScreen { position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background: radial-gradient(circle at 50% 100%, #2a3a2a 0%, #101418 60%, #05060a 100%), linear-gradient(180deg, #0a0e14 0%, #05060a 100%);
+    border-radius: 6px; overflow: hidden; box-shadow: inset 0 0 60px rgba(0,0,0,0.85); image-rendering: pixelated; user-select: none; }
+  #gameScreen::before { content: ''; position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 10% 20%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 30% 40%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 70% 15%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 85% 35%, #fff 50%, transparent 100%),
+      radial-gradient(1px 1px at 55% 25%, #fff 50%, transparent 100%);
+    opacity: 0.35; pointer-events: none; }
+  #gameScreen::after { content: ''; position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; transform: translate(-50%, -50%);
+    background: linear-gradient(#fff, #fff) center/2px 14px no-repeat, linear-gradient(#fff, #fff) center/14px 2px no-repeat;
+    mix-blend-mode: difference; pointer-events: none; }
+  #hotbar { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; background: rgba(0,0,0,0.55); border: 2px solid rgba(0,0,0,0.85); border-radius: 3px; }
+  #hotbar .slot { width: 30px; height: 30px; background: rgba(80,80,80,0.55); border: 1px solid rgba(0,0,0,0.6); }
+  #hotbar .slot.active { outline: 2px solid #fff; outline-offset: -1px; }
+  #hud-top-left { position: absolute; top: 10px; left: 10px; display: flex; gap: 2px; font-size: 16px; filter: drop-shadow(1px 1px 0 #000); }
+  #subtitleArea { position: absolute; left: 50%; bottom: 55px; transform: translateX(-50%); width: 60%; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .subtitle-box { background: rgba(0, 0, 0, 0.72); padding: 3px 8px; max-width: 100%; color: #fff; font-size: 15px; line-height: 18px; text-align: center; text-shadow: 1.5px 1.5px 0 rgba(0,0,0,0.85); word-wrap: break-word; white-space: pre-wrap; transition: opacity 0.2s ease-out; }
+
+  .segments { margin-top: 6px; }
+  .segment { background: var(--seg); border: 1px solid #333; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+  .seg-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .seg-num { color: var(--acc); font-weight: bold; font-size: 13px; }
+  .seg-actions button { background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; padding: 2px 7px; margin-left: 4px; cursor: pointer; font-family: inherit; font-size: 11px; }
+  .seg-actions button:hover { background: #444; }
+  .seg-actions button.del { background: #433; color: #e88; border-color: #855; }
+  .seg-actions button.del:hover { background: #644; }
+  .seg-actions button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .seg-text { min-height: 38px; margin-top: 4px; }
+  .seg-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+  .seg-fields.cols2 { grid-template-columns: repeat(2, 1fr); }
+  .seg-field label { font-size: 10px; color: #777; margin: 0 0 2px 0; display: block; }
+  .seg-field input, .seg-field select { font-size: 12px; padding: 4px 6px; }
+  .seg-palette { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+  .seg-palette .pc { width: 16px; height: 16px; border-radius: 3px; border: 1px solid #444; cursor: pointer; transition: .15s; }
+  .seg-palette .pc:hover { transform: scale(1.15); border-color: var(--acc); }
+  .add-segment-btn { width: 100%; padding: 10px; background: #233; color: #8cf; border: 1px dashed #357; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 13px; margin-top: 4px; }
+  .add-segment-btn:hover { background: #345; border-style: solid; }
+
+  .drop-zone { border: 2px dashed #555; border-radius: 8px; padding: 24px; text-align: center; color: #888; cursor: pointer; transition: .2s; margin-top: 10px; font-size: 13px; }
+  .drop-zone.hover { border-color: var(--acc); color: var(--acc); background: rgba(255,170,0,0.05); }
+  .file-link { color: var(--acc); cursor: pointer; text-decoration: underline; }
+  .sound-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .sound-row { display: grid; grid-template-columns: 2fr 1fr auto auto; gap: 8px; align-items: center; background: #1a1a1a; padding: 8px 10px; border-radius: 6px; }
+  .sound-row .orig { color: #888; font-size: 11px; margin-top: 3px; }
+  .sound-row input, .sound-row select { padding: 5px 7px; font-size: 12px; }
+  .sound-row button { background: #433; color: #e88; border: 1px solid #855; border-radius: 4px; padding: 6px 10px; cursor: pointer; font-family: inherit; font-size: 12px; }
+  .sound-row button.play { background: #234; color: #8cf; border-color: #357; }
+  .empty-list { color: #666; font-size: 12px; padding: 12px; text-align: center; font-style: italic; }
+  #soundCmdHint { min-height: 60px; font-size: 11px; }
+
+  /* ===== Кастомный тултип ===== */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+    background: rgba(15, 15, 15, 0.97);
+    border: 1px solid var(--acc);
+    border-radius: 5px;
+    padding: 7px 11px;
+    font-size: 12px;
+    color: #d8d8d8;
+    max-width: 340px;
+    z-index: 10000;
+    line-height: 1.5;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip code {
+    background: #2a2a2a;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--acc);
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+  }
+  #tooltip b { color: #fff; }
+  #tooltip .tip-title { color: var(--acc); font-weight: bold; display: block; margin-bottom: 3px; font-size: 12px; }
+  #tooltip .tip-ex { display: inline-block; padding: 1px 4px; background: #222; border-radius: 3px; margin: 0 1px; }
+  #tooltip hr { border: none; border-top: 1px solid #333; margin: 5px 0; }
+</style>
+</head>
+<body>
+<h1>🎬 HL2 Subtitles — генератор команд</h1>
+<div class="layout">
+
+  <div class="panel">
+    <label>Цель (targets)</label>
+    <select id="targets">
+      <option value="@a">@a — все игроки</option>
+      <option value="@p" selected>@p — ближайший</option>
+      <option value="@r">@r — случайный</option>
+      <option value="@e[type=player]">@e[type=player] — селектор</option>
+    </select>
+
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;color:#8cf;font-size:12px;user-select:none">📥 Импорт готовой команды</summary>
+      <textarea id="importInput" placeholder="/hl2_subtitles send @p &quot;текст...&quot; 0.05 3 0 white ui.button.click 1.8 0.15 each" style="min-height:60px;margin-top:8px;font-size:11px"></textarea>
+      <button class="sec" style="width:100%;margin-top:6px" onclick="importCommand()">Импортировать</button>
+      <div class="hint" style="margin-top:6px">Заменяет текущие сегменты. Можно вставить команду из MC или из поля «Команда» справа.</div>
+    </details>
+
+    <label style="margin-top:14px">Сегменты субтитра</label>
+    <div class="hint" style="margin-top:0">
+      Каждый сегмент — как отдельный вызов команды: следующий появляется снизу,<br>
+      предыдущий уезжает вверх и исчезает по своему таймауту.<br>
+      <b>Пауза до след.</b> — сколько ждать после окончания печати текущего сегмента.<br>
+      <b>+ Сегмент</b> — копирует свойства предыдущего.
+    </div>
+
+    <div class="segments" id="segments"></div>
+    <button class="add-segment-btn" onclick="addSegment()">+ Добавить сегмент</button>
+  </div>
+
+  <div class="panel">
+    <label>ПРЕДПРОСМОТР (как в игре):</label>
+    <div id="gameScreen">
+      <div id="hud-top-left">❤❤❤❤❤</div>
+      <div id="subtitleArea"></div>
+      <div id="hotbar">
+        <div class="slot active"></div><div class="slot"></div><div class="slot"></div>
+        <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+        <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <button class="sec" onclick="playAnimation()" style="flex:1">▶ проиграть анимацию</button>
+      <button class="sec" onclick="showPreview(0)" style="flex:1">👁 показать #1</button>
+    </div>
+
+    <label style="margin-top:18px">Команда</label>
+    <textarea id="output" readonly onclick="this.select()"></textarea>
+    <button class="main" onclick="copyCmd(this)">📋 Скопировать</button>
+
+    <label>Команда для командного блока (targets = @a)</label>
+    <textarea id="outputCB" readonly onclick="this.select()" style="min-height:60px"></textarea>
+
+    <div class="hint">
+      Права: только OP (permission level 2).<br>
+      <code>&amp;l</code> — жирный, <code>&amp;6</code> — золотой, <code>&amp;r</code> — сброс.
+    </div>
+  </div>
+
+  <div class="panel wide">
+    <h2>🔊 Звуки — генератор ресурспака</h2>
+    <div class="hint">Загрузи <b>.ogg</b> или готовый <b>.zip</b>-ресурспак.</div>
+
+    <div id="dropZone" class="drop-zone">
+      Перетащи <code>.ogg</code> или <code>.zip</code> сюда, либо
+      <label class="file-link">выбери файлы<input type="file" accept=".ogg,.zip,audio/ogg,application/zip" multiple hidden id="fileInput"></label>
+    </div>
+
+    <div id="soundList" class="sound-list"><div class="empty-list">Пока нет звуков.</div></div>
+
+    <div class="row">
+      <div><label>Имя пака</label><input type="text" id="packName" value="resourses"></div>
+      <div><label>Описание</label><input type="text" id="packDesc" value="HL2 Subtitles — custom sounds"></div>
+    </div>
+
+    <button class="main" onclick="downloadPack()">⬇ Скачать .zip ресурспака</button>
+
+    <label>Список звуков (для вставки в поле «Звук»)</label>
+    <textarea id="soundCmdHint" readonly onclick="this.select()"></textarea>
+  </div>
+
+</div>
+
+<div id="tooltip"></div>
+<datalist id="soundDatalist"></datalist>
+
+<script>
+// =====================================================================
+//  КАСТОМНЫЙ ТУЛТИП (с задержкой и fade-in)
+// =====================================================================
+const tooltipEl = document.getElementById('tooltip');
+
+let tipTimer = null;
+let currentTipEl = null;
+let mouseX = 0, mouseY = 0;
+const TIP_DELAY_MS = 350;
+
+function positionTooltipAt(x, y) {
+  const pad = 14;
+  let nx = x + pad;
+  let ny = y + pad;
+  const r = tooltipEl.getBoundingClientRect();
+  if (nx + r.width > window.innerWidth - 4) nx = x - r.width - pad;
+  if (ny + r.height > window.innerHeight - 4) ny = y - r.height - pad;
+  if (nx < 4) nx = 4;
+  if (ny < 4) ny = 4;
+  tooltipEl.style.left = nx + 'px';
+  tooltipEl.style.top = ny + 'px';
+}
+
+function hideTooltip() {
+  if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+  tooltipEl.classList.remove('visible');
+  currentTipEl = null;
+}
+
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest('[data-tip]');
+  if (el === currentTipEl) return;
+  if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+  tooltipEl.classList.remove('visible');
+  currentTipEl = el;
+  if (!el) return;
+  tipTimer = setTimeout(() => {
+    tipTimer = null;
+    if (currentTipEl !== el) return;
+    tooltipEl.innerHTML = el.getAttribute('data-tip');
+    positionTooltipAt(mouseX, mouseY);
+    tooltipEl.classList.add('visible');
+  }, TIP_DELAY_MS);
+});
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (tooltipEl.classList.contains('visible')) {
+    positionTooltipAt(mouseX, mouseY);
+  }
+});
+
+document.addEventListener('mouseout', (e) => {
+  const el = e.target.closest('[data-tip]');
+  if (!el) return;
+  const rel = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]');
+  if (rel !== el) hideTooltip();
+});
+
+// =====================================================================
+//  ВАНИЛЬНЫЕ ЗВУКИ 1.16.5
+// =====================================================================
+const VANILLA_SOUNDS = [
+  "ui.button.click","ui.toast.in","ui.toast.out","ui.toast.challenge_complete",
+  "entity.item.pickup","entity.item.break",
+  "item.trident.throw","item.trident.return","item.trident.hit","item.trident.hit_ground","item.trident.thunder","item.trident.riptide_1","item.trident.riptide_2","item.trident.riptide_3",
+  "item.bucket.empty","item.bucket.fill","item.bottle.fill","item.bottle.empty",
+  "item.shield.block","item.shield.break","item.totem.use","item.firecharge.use","item.flintandsteel.use",
+  "item.hoe.till","item.axe.strip","item.crop.plant","item.bone_meal.use","item.chorus_fruit.teleport",
+  "block.note_block.harp","block.note_block.bass","block.note_block.snare","block.note_block.hat",
+  "block.note_block.basedrum","block.note_block.bell","block.note_block.chime","block.note_block.flute",
+  "block.note_block.guitar","block.note_block.xylophone","block.note_block.iron_xylophone",
+  "block.note_block.cow_bell","block.note_block.didgeridoo","block.note_block.bit","block.note_block.banjo","block.note_block.pling",
+  "block.stone.break","block.stone.place","block.wood.break","block.wood.place",
+  "block.glass.break","block.glass.place","block.gravel.break","block.gravel.place",
+  "block.sand.break","block.sand.place","block.wool.break","block.wool.place",
+  "block.metal.break","block.metal.place","block.metal_pressure_plate.click_on","block.metal_pressure_plate.click_off",
+  "block.wooden_pressure_plate.click_on","block.wooden_pressure_plate.click_off",
+  "block.lever.click","block.stone_button.click_on","block.stone_button.click_off",
+  "block.wooden_button.click_on","block.wooden_button.click_off",
+  "block.wooden_door.open","block.wooden_door.close","block.iron_door.open","block.iron_door.close",
+  "block.wooden_trapdoor.open","block.wooden_trapdoor.close","block.iron_trapdoor.open","block.iron_trapdoor.close",
+  "block.chest.open","block.chest.close","block.barrel.open","block.barrel.close",
+  "block.shulker_box.open","block.shulker_box.close","block.ender_chest.open","block.ender_chest.close",
+  "block.anvil.land","block.anvil.use","block.anvil.break","block.anvil.place","block.anvil.destroy",
+  "block.grindstone.use","block.bell.use","block.bell.resonate",
+  "block.beacon.activate","block.beacon.ambient","block.beacon.deactivate","block.beacon.power_select",
+  "block.conduit.activate","block.conduit.ambient","block.conduit.attack.target","block.conduit.deactivate",
+  "block.portal.trigger","block.portal.travel","block.portal.ambient",
+  "block.end_portal.spawn","block.end_portal_frame.fill",
+  "block.fire.ambient","block.fire.extinguish",
+  "block.water.ambient","block.lava.ambient","block.lava.pop","block.lava.extinguish",
+  "block.furnace.fire_crackle","block.campfire.crackle",
+  "block.smithing_table.use","block.smoker.smoke","block.blastfurnace.fire_crackle",
+  "entity.creeper.primed","entity.tnt.primed",
+  "entity.zombie.ambient","entity.zombie.hurt","entity.zombie.death",
+  "entity.skeleton.ambient","entity.skeleton.hurt","entity.skeleton.death","entity.skeleton.shoot","entity.skeleton.step",
+  "entity.spider.ambient","entity.spider.hurt","entity.spider.death","entity.spider.step",
+  "entity.enderman.ambient","entity.enderman.hurt","entity.enderman.death","entity.enderman.teleport",
+  "entity.cow.ambient","entity.cow.hurt","entity.cow.death","entity.cow.milk","entity.cow.step",
+  "entity.pig.ambient","entity.pig.hurt","entity.pig.death","entity.pig.saddle","entity.pig.step",
+  "entity.sheep.ambient","entity.sheep.hurt","entity.sheep.death","entity.sheep.shear","entity.sheep.step",
+  "entity.chicken.ambient","entity.chicken.hurt","entity.chicken.death","entity.chicken.egg","entity.chicken.step",
+  "entity.wolf.ambient","entity.wolf.hurt","entity.wolf.death","entity.wolf.growl","entity.wolf.howl","entity.wolf.whine",
+  "entity.cat.ambient","entity.cat.hurt","entity.cat.death","entity.cat.purr","entity.cat.purreow","entity.cat.hiss",
+  "entity.villager.ambient","entity.villager.hurt","entity.villager.death","entity.villager.yes","entity.villager.no","entity.villager.trade","entity.villager.celebrate",
+  "entity.witch.ambient","entity.witch.hurt","entity.witch.death","entity.witch.drink","entity.witch.throw",
+  "entity.ghast.ambient","entity.ghast.hurt","entity.ghast.death","entity.ghast.scream","entity.ghast.shoot","entity.ghast.warn",
+  "entity.blaze.ambient","entity.blaze.burn","entity.blaze.death","entity.blaze.hurt","entity.blaze.shoot",
+  "entity.pillager.ambient","entity.pillager.celebrate","entity.pillager.death","entity.pillager.hurt",
+  "entity.ravager.ambient","entity.ravager.attack","entity.ravager.celebrate","entity.ravager.death","entity.ravager.hurt","entity.ravager.roar","entity.ravager.step","entity.ravager.stunned",
+  "entity.vindicator.ambient","entity.vindicator.celebrate","entity.vindicator.death","entity.vindicator.hurt",
+  "entity.piglin.ambient","entity.piglin.angry","entity.piglin.celebrate","entity.piglin.death","entity.piglin.hurt","entity.piglin.step",
+  "entity.hoglin.ambient","entity.hoglin.angry","entity.hoglin.attack","entity.hoglin.death","entity.hoglin.hurt","entity.hoglin.step",
+  "entity.zoglin.ambient","entity.zoglin.angry","entity.zoglin.attack","entity.zoglin.death","entity.zoglin.hurt","entity.zoglin.step",
+  "entity.player.hurt","entity.player.hurt_drown","entity.player.hurt_on_fire","entity.player.death","entity.player.levelup","entity.player.burp","entity.player.splash","entity.player.splash.high_speed","entity.player.swim","entity.player.attack.crit","entity.player.attack.knockback","entity.player.attack.nodamage","entity.player.attack.strong","entity.player.attack.sweep","entity.player.attack.weak","entity.player.big_fall","entity.player.small_fall",
+  "entity.generic.hurt","entity.generic.death","entity.generic.explode","entity.generic.big_fall","entity.generic.small_fall","entity.generic.drink","entity.generic.eat","entity.generic.burn","entity.generic.extinguish_fire","entity.generic.swim","entity.generic.splash",
+  "entity.experience_orb.pickup",
+  "entity.arrow.shoot","entity.arrow.hit","entity.arrow.hit_player","entity.arrow.hit_block",
+  "entity.egg.throw","entity.snowball.throw","entity.ender_pearl.throw","entity.ender_eye.launch",
+  "entity.firework_rocket.launch","entity.firework_rocket.shoot","entity.firework_rocket.blast","entity.firework_rocket.large_blast","entity.firework_rocket.twinkle","entity.firework_rocket.twinkle_far",
+  "entity.lightning_bolt.thunder","entity.lightning_bolt.impact","entity.lightning_bolt.ambient",
+  "ambient.weather.rain","ambient.weather.thunder","ambient.cave","ambient.underwater.enter","ambient.underwater.exit","ambient.underwater.loop",
+  "music.menu","music.creative","music.game","music.end","music.dragon",
+  "music_disc.13","music_disc.cat","music_disc.blocks","music_disc.chirp","music_disc.far","music_disc.mall","music_disc.mellohi","music_disc.stal","music_disc.strad","music_disc.ward","music_disc.11","music_disc.wait","music_disc.pigstep"
+];
+
+const MC_COLORS = {
+  'black':'#000000','dark_blue':'#0000AA','dark_green':'#00AA00','dark_aqua':'#00AAAA',
+  'dark_red':'#AA0000','dark_purple':'#AA00AA','gold':'#FFAA00','gray':'#AAAAAA',
+  'dark_gray':'#555555','blue':'#5555FF','green':'#55FF55','aqua':'#55FFFF',
+  'red':'#FF5555','light_purple':'#FF55FF','yellow':'#FFFF55','white':'#FFFFFF'
+};
+const MC_COLOR_CODES = {
+  'black':'0','dark_blue':'1','dark_green':'2','dark_aqua':'3',
+  'dark_red':'4','dark_purple':'5','gold':'6','gray':'7',
+  'dark_gray':'8','blue':'9','green':'a','aqua':'b',
+  'red':'c','light_purple':'d','yellow':'e','white':'f'
+};
+const MC_COLOR_NAMES_RU = {
+  'black':'чёрный','dark_blue':'тёмно-синий','dark_green':'тёмно-зелёный','dark_aqua':'тёмно-бирюзовый',
+  'dark_red':'тёмно-красный','dark_purple':'тёмно-фиолетовый','gold':'золотой','gray':'серый',
+  'dark_gray':'тёмно-серый','blue':'синий','green':'зелёный','aqua':'бирюзовый',
+  'red':'красный','light_purple':'розовый','yellow':'жёлтый','white':'белый'
+};
+const FORMAT_COLORS = {
+  '0':'#000000','1':'#0000AA','2':'#00AA00','3':'#00AAAA',
+  '4':'#AA0000','5':'#AA00AA','6':'#FFAA00','7':'#AAAAAA',
+  '8':'#555555','9':'#5555FF','a':'#55FF55','b':'#55FFFF',
+  'c':'#FF5555','d':'#FF55FF','e':'#FFFF55','f':'#FFFFFF'
+};
+
+// =====================================================================
+//  ТУЛТИПЫ
+// =====================================================================
+const TIPS = {
+  segNumFirst: '<span class="tip-title">Сегмент #1 — базовый</span>Его свойства становятся аргументами команды. Остальные сегменты только указывают <code>{cfg:...}</code> если что-то отличается.',
+
+  textArea:
+    '<span class="tip-title">Текст субтитра</span>' +
+    'Поддерживает:<br>' +
+    '• <code>&amp;X</code> — цвет (<code>&amp;6</code> = золотой, см. палитру ниже)<br>' +
+    '• <code>&amp;l</code>, <code>&amp;o</code>, <code>&amp;n</code>, <code>&amp;m</code>, <code>&amp;k</code> — форматирование<br>' +
+    '• <code>{p:СЕК}</code> — пауза<br>' +
+    '• <code>{fast}...{/fast}</code> — мгновенная печать',
+
+  fmtBold: 'Жирный: <b>так выглядит</b><br>Вставляется <code>&amp;l</code>, закрывается <code>&amp;r</code>',
+  fmtItalic: 'Курсив: <i>так выглядит</i><br>Вставляется <code>&amp;o</code>, закрывается <code>&amp;r</code>',
+  fmtUnderline: 'Подчёркнутый: <u>так выглядит</u><br>Вставляется <code>&amp;n</code>, закрывается <code>&amp;r</code>',
+  fmtStrike: 'Зачёркнутый: <s>так выглядит</s><br>Вставляется <code>&amp;m</code>, закрывается <code>&amp;r</code>',
+  fmtObf: 'Обфускация — вместо текста случайные символы, как <span class="tip-ex">§k</span> в MC<br>Вставляется <code>&amp;k</code>, закрывается <code>&amp;r</code>',
+  fmtFast:
+    '<span class="tip-title">{fast}...{/fast}</span>' +
+    'Этот участок текста появится <b>мгновенно</b>, без посимвольной печати.<br>' +
+    'Пример: <code>{fast}&amp;lЗАГОЛОВОК{/fast}{p:0.5}дальше печатается</code>',
+
+  pauseBtn:
+    '<span class="tip-title">Вставить паузу</span>' +
+    'Символ <code>{p:СЕК}</code> — пауза в этом месте текста.<br>' +
+    'Длительность — в поле <b>справа</b> от кнопки.<br>' +
+    'Пример: <code>До{p:1}После</code> — секунда тишины между словами',
+  pauseInput: 'Длительность паузы в секундах',
+
+  selPalette:
+    '<span class="tip-title">Цвет отдельного символа (&amp;X)</span>' +
+    'Выдели часть текста и нажми квадратик — цвет применится <b>только к выделенному</b> и закроется <code>&amp;r</code>.<br>' +
+    'Если ничего не выделено — вставится только код.<br>' +
+    '<b>Hex-цвета тут не работают.</b> Только 16 ванильных цветов.',
+
+  colorInput:
+    '<span class="tip-title">Цвет всего сегмента</span>' +
+    'Принимает:<br>' +
+    '• Имя: <code>gold</code>, <code>red</code>, <code>aqua</code> ...<br>' +
+    '• Hex: <code>#FFAA00</code> или <code>0xFFAA00</code> или <code>FFAA00</code><br>' +
+    'Можно перекрашивать отдельные символы палитрой «Цвет символа» выше',
+
+  sound:
+    '<span class="tip-title">Звук</span>' +
+    'Ванильные: <code>ui.button.click</code>, <code>block.note_block.hat</code> и др.<br>' +
+    'Из ресурспака: <code>hl2_subtitles:имя</code>.<br>' +
+    'Финальная громкость = Volume × ползунок «Голос/Речь» в настройках игры.',
+
+  soundMode:
+    '<span class="tip-title">Режим звука</span>' +
+    '<b>each</b> — звук на каждую букву (как в HL2)<br>' +
+    '<b>once</b> — один звук при появлении субтитра<br>' +
+    '<b>off</b> — совсем без звука',
+
+  breakAfter:
+    '<span class="tip-title">Пауза до следующего сегмента</span>' +
+    'Сколько секунд ждать между концом печати этого сегмента и появлением следующего.<br>' +
+    'Внутри команды превращается в <code>{break:СЕК}</code>.',
+
+  packName: 'Имя .zip-файла ресурспака при скачивании',
+  packDesc: 'Описание внутри pack.mcmeta',
+  dropZone: 'Перетащи .ogg-файлы (свои звуки) или .zip (готовый ресурспак)',
+
+  soundName: 'Имя звука, под которым он попадёт в ресурспак. Формат: hl2_subtitles:имя',
+  soundCategory: 'Категория звука — влияет на ползунок громкости в настройках MC. voice = «Голос/Речь».',
+  playSound: 'Прослушать в браузере',
+  delSound: 'Удалить звук из списка'
+};
+
+// =====================================================================
+//  СОСТОЯНИЕ
+// =====================================================================
+let segments = [
+  {
+    text: "Текст субтитр",
+    color: "white",
+    sound: "ui.button.click",
+    pitch: 1.8,
+    volume: 0.15,
+    mode: "each",
+    speed: 0.05,
+    duration: 3.0,
+    delay: 0.0,
+    breakAfter: 0.5
+  }
+];
+
+const segmentsEl = document.getElementById('segments');
+
+function parseQuotedString(s, start) {
+  let i = start + 1;
+  let result = '';
+  while (i < s.length) {
+    const c = s[i];
+    if (c === '\\' && i + 1 < s.length) {
+      const n = s[i+1];
+      if (n === '"') { result += '"'; i += 2; continue; }
+      if (n === '\\') { result += '\\'; i += 2; continue; }
+      result += c; i++; continue;
+    }
+    if (c === '"') return { text: result, end: i + 1 };
+    result += c;
+    i++;
+  }
+  return null;
+}
+
+function importCommand() {
+  let input = document.getElementById('importInput').value.trim();
+  if (!input) { alert('Вставь команду в поле выше.'); return; }
+  input = input.replace(/\u00a7/g, '&');
+
+  const prefix = input.match(/^\s*\/?hl2_subtitles\s+send\s+(\S+)\s+/);
+  if (!prefix) {
+    alert('Не удалось распарсить.\nОжидается: /hl2_subtitles send <targets> "текст" [аргументы]');
+    return;
+  }
+  const targets = prefix[1];
+  let rest = input.substring(prefix[0].length);
+
+  if (!rest.startsWith('"')) {
+    alert('Текст субтитра должен быть в кавычках: "..."');
+    return;
+  }
+  const parsed = parseQuotedString(rest, 0);
+  if (!parsed) {
+    alert('Не закрыта кавычка в тексте.');
+    return;
+  }
+  const text = parsed.text;
+  const afterText = rest.substring(parsed.end).trim();
+  const args = afterText ? afterText.split(/\s+/) : [];
+
+  const base = {
+    speed: 0.05, duration: 3.0, delay: 0.0,
+    color: 'white', sound: 'ui.button.click',
+    pitch: 1.8, volume: 0.15, mode: 'each'
+  };
+  if (args.length >= 1 && !isNaN(parseFloat(args[0]))) base.speed = parseFloat(args[0]);
+  if (args.length >= 2 && !isNaN(parseFloat(args[1]))) base.duration = parseFloat(args[1]);
+  if (args.length >= 3 && !isNaN(parseFloat(args[2]))) base.delay = parseFloat(args[2]);
+  if (args.length >= 4) base.color = args[3];
+  if (args.length >= 5) base.sound = args[4];
+  if (args.length >= 6 && !isNaN(parseFloat(args[5]))) base.pitch = parseFloat(args[5]);
+  if (args.length >= 7 && !isNaN(parseFloat(args[6]))) base.volume = parseFloat(args[6]);
+  if (args.length >= 8) base.mode = args[7];
+
+  const result = [];
+  let cfg = {};
+  let curText = '';
+
+  function finishSegment(breakAfter) {
+    result.push({
+      text: curText,
+      color: cfg.color != null ? cfg.color : base.color,
+      sound: cfg.sound != null ? cfg.sound : base.sound,
+      pitch: cfg.pitch != null ? parseFloat(cfg.pitch) : base.pitch,
+      volume: cfg.volume != null ? parseFloat(cfg.volume) : base.volume,
+      mode: cfg.mode != null ? cfg.mode : base.mode,
+      speed: cfg.speed != null ? parseFloat(cfg.speed) : base.speed,
+      duration: (cfg.dur != null ? parseFloat(cfg.dur) : (cfg.duration != null ? parseFloat(cfg.duration) : base.duration)),
+      delay: cfg.delay != null ? parseFloat(cfg.delay) : base.delay,
+      breakAfter: breakAfter
+    });
+    cfg = {};
+    curText = '';
+  }
+
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    if (text.startsWith('{break', i)) {
+      const close = text.indexOf('}', i + 6);
+      if (close > 0) {
+        const arg = text.substring(i + 6, close).trim();
+        let bd = 0;
+        if (arg.startsWith(':')) {
+          const v = parseFloat(arg.substring(1).trim());
+          if (!isNaN(v)) bd = v;
+        }
+        finishSegment(bd);
+        i = close + 1;
+        continue;
+      }
+    }
+    if (text.startsWith('{cfg:', i)) {
+      const close = text.indexOf('}', i + 5);
+      if (close > 0) {
+        const body = text.substring(i + 5, close);
+        body.split(',').forEach(pair => {
+          const eq = pair.indexOf('=');
+          if (eq < 0) return;
+          const k = pair.substring(0, eq).trim().toLowerCase();
+          const v = pair.substring(eq + 1).trim();
+          if (k && v) cfg[k] = v;
+        });
+        i = close + 1;
+        continue;
+      }
+    }
+    curText += text[i];
+    i++;
+  }
+
+  // Последний сегмент
+  if (curText.length > 0 || result.length === 0) {
+    finishSegment(0.5);
+  }
+  if (result.length === 0) {
+    alert('Не удалось найти ни одного сегмента.');
+    return;
+  }
+
+  segments = result;
+  renderSegments();
+  document.getElementById('targets').value = targets;
+  afterEdit();
+  document.getElementById('importInput').value = '';
+  alert('Импортировано сегментов: ' + result.length);
+}
+
+function renderSegments() {
+  segmentsEl.innerHTML = '';
+  segments.forEach((seg, i) => segmentsEl.appendChild(buildSegmentEl(seg, i)));
+}
+
+function buildSegmentEl(seg, i) {
+  const isFirst = i === 0;
+  const isLast = i === segments.length - 1;
+
+  const el = document.createElement('div');
+  el.className = 'segment';
+
+  const header = document.createElement('div');
+  header.className = 'seg-header';
+  const numSpan = document.createElement('span');
+  numSpan.className = 'seg-num';
+  numSpan.textContent = `#${i+1}${isFirst ? ' (базовый)' : ''}`;
+  if (isFirst) numSpan.setAttribute('data-tip', TIPS.segNumFirst);
+  header.appendChild(numSpan);
+
+  const actions = document.createElement('div');
+  actions.className = 'seg-actions';
+
+  if (!isFirst) {
+    const b = document.createElement('button');
+    b.textContent = '↑';
+    b.title = 'Переместить вверх';
+    b.onclick = () => moveSegment(i, -1);
+    actions.appendChild(b);
+  }
+  if (!isLast) {
+    const b = document.createElement('button');
+    b.textContent = '↓';
+    b.title = 'Переместить вниз';
+    b.onclick = () => moveSegment(i, 1);
+    actions.appendChild(b);
+  }
+  const del = document.createElement('button');
+  del.className = 'del';
+  del.textContent = '✕';
+  del.title = 'Удалить сегмент';
+  del.disabled = segments.length <= 1;
+  del.onclick = () => removeSegment(i);
+  actions.appendChild(del);
+
+  header.appendChild(actions);
+  el.appendChild(header);
+
+  const ta = document.createElement('textarea');
+  ta.className = 'seg-text';
+  ta.value = seg.text;
+  ta.placeholder = 'Текст сегмента...';
+  ta.setAttribute('data-tip', TIPS.textArea);
+  ta.oninput = (e) => { seg.text = e.target.value; afterEdit(); };
+  ta.onfocus = () => showPreview(i);
+  el.appendChild(ta);
+
+  const fmt = document.createElement('div');
+  fmt.className = 'fmt-btns';
+  fmt.style.marginTop = '4px';
+  [
+    ['&l','&r','&l жирный', 'fmtBold'],
+    ['&o','&r','&o курсив', 'fmtItalic'],
+    ['&n','&r','&n подчёркнутый', 'fmtUnderline'],
+    ['&m','&r','&m зачёркнутый', 'fmtStrike'],
+    ['&k','&r','&k обфускация', 'fmtObf'],
+    ['{fast}','{/fast}','{fast} быстро', 'fmtFast'],
+  ].forEach(([open, close, label, tipKey]) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.setAttribute('data-tip', TIPS[tipKey]);
+    b.onclick = () => {
+      const s = ta.selectionStart, e = ta.selectionEnd;
+      const v = ta.value;
+      ta.value = v.slice(0, s) + open + v.slice(s, e) + close + v.slice(e);
+      seg.text = ta.value;
+      ta.focus();
+      ta.setSelectionRange(s + open.length, e + open.length);
+      afterEdit();
+    };
+    fmt.appendChild(b);
+  });
+
+  const pauseInput = document.createElement('input');
+  pauseInput.type = 'number';
+  pauseInput.step = 0.1; pauseInput.min = 0; pauseInput.max = 60;
+  pauseInput.value = '0.5';
+  pauseInput.style.width = '54px';
+  pauseInput.style.display = 'inline-block';
+  pauseInput.style.padding = '2px 4px';
+  pauseInput.style.fontSize = '11px';
+  pauseInput.style.margin = '2px';
+  pauseInput.setAttribute('data-tip', TIPS.pauseInput);
+
+  const pauseBtn = document.createElement('button');
+  pauseBtn.textContent = '{p} пауза';
+  pauseBtn.setAttribute('data-tip', TIPS.pauseBtn);
+  pauseBtn.onclick = () => {
+    const val = parseFloat(pauseInput.value) || 0;
+    const snippet = `{p:${val}}`;
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const v = ta.value;
+    ta.value = v.slice(0, s) + snippet + v.slice(e);
+    seg.text = ta.value;
+    ta.focus();
+    ta.setSelectionRange(s + snippet.length, s + snippet.length);
+    afterEdit();
+  };
+  fmt.appendChild(pauseBtn);
+  fmt.appendChild(pauseInput);
+
+  el.appendChild(fmt);
+
+  // Палитра цветов для выделения
+  const selPaletteWrap = document.createElement('div');
+  const selLabel = document.createElement('label');
+  selLabel.style.fontSize = '10px';
+  selLabel.style.color = '#777';
+  selLabel.style.display = 'block';
+  selLabel.style.marginTop = '4px';
+  selLabel.textContent = 'Цвет символа (&X в текст)';
+  selLabel.setAttribute('data-tip', TIPS.selPalette);
+  selPaletteWrap.appendChild(selLabel);
+
+  const selPalette = document.createElement('div');
+  selPalette.className = 'seg-palette';
+  Object.entries(MC_COLORS).forEach(([name, hex]) => {
+    const pc = document.createElement('div');
+    pc.className = 'pc';
+    pc.style.background = hex;
+    pc.title = MC_COLOR_NAMES_RU[name] + ' (&' + MC_COLOR_CODES[name] + ')';
+    pc.onclick = () => {
+      const s = ta.selectionStart, e = ta.selectionEnd;
+      const v = ta.value;
+      const code = '&' + MC_COLOR_CODES[name];
+      if (e > s) {
+        const selected = v.slice(s, e);
+        const wrapped = code + selected + '&r';
+        ta.value = v.slice(0, s) + wrapped + v.slice(e);
+        seg.text = ta.value;
+        ta.focus();
+        ta.setSelectionRange(s + code.length, s + code.length + selected.length);
+      } else {
+        ta.value = v.slice(0, s) + code + v.slice(s);
+        seg.text = ta.value;
+        ta.focus();
+        ta.setSelectionRange(s + code.length, s + code.length);
+      }
+      afterEdit();
+    };
+    selPalette.appendChild(pc);
+  });
+  selPaletteWrap.appendChild(selPalette);
+  el.appendChild(selPaletteWrap);
+
+  // Цвет сегмента
+  const colorField = document.createElement('div');
+  colorField.className = 'seg-field';
+  const colorLabel = document.createElement('label');
+  colorLabel.textContent = 'Цвет сегмента';
+  colorLabel.setAttribute('data-tip', TIPS.colorInput);
+  colorField.appendChild(colorLabel);
+
+  const colorInput = document.createElement('input');
+  colorInput.type = 'text';
+  colorInput.value = seg.color;
+  colorInput.placeholder = 'gold / #FFAA00 / FFAA00 / 0xFFAA00';
+  colorInput.setAttribute('data-tip', TIPS.colorInput);
+  colorInput.oninput = (e) => { seg.color = e.target.value; afterEdit(); };
+  colorInput.onfocus = () => showPreview(i);
+  colorField.appendChild(colorInput);
+  el.appendChild(colorField);
+
+  const palette = document.createElement('div');
+  palette.className = 'seg-palette';
+  Object.entries(MC_COLORS).forEach(([name, hex]) => {
+    const pc = document.createElement('div');
+    pc.className = 'pc';
+    pc.style.background = hex;
+    pc.title = MC_COLOR_NAMES_RU[name];
+    pc.onclick = () => { seg.color = name; colorInput.value = name; afterEdit(); showPreview(i); };
+    palette.appendChild(pc);
+  });
+  el.appendChild(palette);
+
+  // Звук / режим
+  const f1 = document.createElement('div');
+  f1.className = 'seg-fields cols2';
+
+  const soundWrap = document.createElement('div');
+  soundWrap.className = 'seg-field';
+  const soundLabel = document.createElement('label');
+  soundLabel.textContent = 'Звук';
+  soundLabel.setAttribute('data-tip', TIPS.sound);
+  soundWrap.appendChild(soundLabel);
+  const soundInput = document.createElement('input');
+  soundInput.type = 'text';
+  soundInput.setAttribute('list', 'soundDatalist');
+  soundInput.value = seg.sound;
+  soundInput.setAttribute('data-tip', TIPS.sound);
+  soundInput.oninput = (e) => { seg.sound = e.target.value; afterEdit(); };
+  soundInput.onfocus = () => showPreview(i);
+  soundWrap.appendChild(soundInput);
+  f1.appendChild(soundWrap);
+
+  const modeWrap = document.createElement('div');
+  modeWrap.className = 'seg-field';
+  const modeLabel = document.createElement('label');
+  modeLabel.textContent = 'Режим звука';
+  modeLabel.setAttribute('data-tip', TIPS.soundMode);
+  modeWrap.appendChild(modeLabel);
+  const modeSel = document.createElement('select');
+  modeSel.setAttribute('data-tip', TIPS.soundMode);
+  [
+    ['each', 'each — на каждую букву'],
+    ['once', 'once — один звук в начале'],
+    ['off',  'off — без звука'],
+  ].forEach(([v, label]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label;
+    if (v === seg.mode) o.selected = true;
+    modeSel.appendChild(o);
+  });
+  modeSel.onchange = (e) => { seg.mode = e.target.value; afterEdit(); };
+  modeWrap.appendChild(modeSel);
+  f1.appendChild(modeWrap);
+  el.appendChild(f1);
+
+  // Скорость / длительность / задержка
+  const f2 = document.createElement('div');
+  f2.className = 'seg-fields';
+  [
+    ['Скорость (сек/буква)', 'speed',    0.01, 0, 2],
+    ['Длительность (сек)',    'duration', 0.1,  0.1, 60],
+    ['Задержка (сек)',        'delay',    0.1,  0, 60]
+  ].forEach(([label, key, step, min, max]) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'seg-field';
+    const lbl = document.createElement('label');
+    lbl.textContent = label;
+    wrap.appendChild(lbl);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = step; inp.min = min; inp.max = max;
+    inp.value = seg[key];
+    inp.oninput = (e) => { seg[key] = parseFloat(e.target.value) || 0; afterEdit(); };
+    inp.onfocus = () => showPreview(i);
+    wrap.appendChild(inp);
+    f2.appendChild(wrap);
+  });
+  el.appendChild(f2);
+
+  // Pitch / Volume / Пауза после
+  const f3 = document.createElement('div');
+  f3.className = 'seg-fields';
+
+  [
+    ['Высота тона', 'pitch',  0.1,  0.1, 4],
+    ['Громкость',   'volume', 0.05, 0,   2]
+  ].forEach(([label, key, step, min, max]) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'seg-field';
+    const lbl = document.createElement('label');
+    lbl.textContent = label;
+    wrap.appendChild(lbl);
+    const inp = document.createElement('input');
+    inp.type = 'number';
+    inp.step = step; inp.min = min; inp.max = max;
+    inp.value = seg[key];
+    inp.oninput = (e) => { seg[key] = parseFloat(e.target.value) || 0; afterEdit(); };
+    inp.onfocus = () => showPreview(i);
+    wrap.appendChild(inp);
+    f3.appendChild(wrap);
+  });
+
+  const pauseWrap = document.createElement('div');
+  pauseWrap.className = 'seg-field';
+  const pauseLbl = document.createElement('label');
+  pauseLbl.textContent = 'Пауза до след. (сек)';
+  pauseLbl.setAttribute('data-tip', TIPS.breakAfter);
+  pauseWrap.appendChild(pauseLbl);
+  const pauseInp = document.createElement('input');
+  pauseInp.type = 'number';
+  pauseInp.step = 0.1; pauseInp.min = 0; pauseInp.max = 60;
+  pauseInp.value = seg.breakAfter;
+  pauseInp.disabled = isLast;
+  pauseInp.setAttribute('data-tip', TIPS.breakAfter);
+  pauseInp.oninput = (e) => { seg.breakAfter = parseFloat(e.target.value) || 0; afterEdit(); };
+  pauseWrap.appendChild(pauseInp);
+  f3.appendChild(pauseWrap);
+
+  el.appendChild(f3);
+
+  return el;
+}
+
+function addSegment() {
+  const last = segments[segments.length - 1];
+  const copy = JSON.parse(JSON.stringify(last));
+  copy.text = '';
+  copy.breakAfter = 0.5;
+  segments.push(copy);
+  renderSegments();
+  const newEl = segmentsEl.lastChild.querySelector('.seg-text');
+  if (newEl) newEl.focus();
+  afterEdit();
+}
+
+function removeSegment(i) {
+  if (segments.length <= 1) return;
+  segments.splice(i, 1);
+  renderSegments();
+  afterEdit();
+}
+
+function moveSegment(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= segments.length) return;
+  [segments[i], segments[j]] = [segments[j], segments[i]];
+  renderSegments();
+  afterEdit();
+}
+
+const state = { previewIndex: 0 };
+
+function afterEdit() {
+  generate();
+  if (state.previewIndex >= segments.length) state.previewIndex = 0;
+  updatePreview(state.previewIndex);
+}
+
+function parseScript(text, typeSpeed) {
+  text = text.replace(/\u00a7/g, '&');
+  const steps = [];
+  let instant = false;
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    if (text.startsWith('{fast}', i)) { instant = true; i += 6; continue; }
+    if (text.startsWith('{/fast}', i)) { instant = false; i += 7; continue; }
+    if (text.startsWith('{p:', i)) {
+      const close = text.indexOf('}', i + 3);
+      if (close > 0) {
+        const num = parseFloat(text.substring(i + 3, close).trim());
+        if (!isNaN(num)) { steps.push({ append: '', delayAfter: num, visible: false }); i = close + 1; continue; }
+      }
+    }
+    const c = text[i];
+    if (c === '&' && i + 1 < n) {
+      const nx = text[i+1].toLowerCase();
+      if ('0123456789abcdefklmnor'.indexOf(nx) >= 0 || nx === '&') {
+        steps.push({ append: text.substring(i, i+2), delayAfter: 0, visible: false });
+        i += 2; continue;
+      }
+    }
+    steps.push({ append: c, delayAfter: instant ? 0 : typeSpeed, visible: true });
+    i++;
+  }
+  return steps;
+}
+
+function colorNameToHex(name) {
+  if (!name) return null;
+  name = name.trim();
+  if (name.startsWith('#')) return name;
+  if (/^[0-9a-fA-F]{6}$/.test(name)) return '#' + name;
+  if (name.startsWith('0x') || name.startsWith('0X')) return '#' + name.substring(2);
+  return MC_COLORS[name.toLowerCase()] || null;
+}
+
+const OBF_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*';
+let obfTimers = [];
+
+function randomObfChar() {
+  return OBF_CHARS[Math.floor(Math.random() * OBF_CHARS.length)];
+}
+
+function stopObfuscation() {
+  obfTimers.forEach(t => clearInterval(t));
+  obfTimers = [];
+}
+
+/**
+ * Обфускация по принципу MC: ширина каждого символа фиксируется по ОРИГИНАЛЬНОМУ
+ * символу, а сам символ подменяется случайным. Так текст не дёргается.
+ */
+function startObfuscation(root) {
+  const nodes = root.querySelectorAll('.obf');
+  if (nodes.length === 0) return;
+  const items = [];
+
+  nodes.forEach(n => {
+    // Если структура уже построена — просто переиспользуем
+    let spans;
+    if (n.dataset.obfReady === '1') {
+      spans = Array.from(n.querySelectorAll('.obf-c'));
+    } else {
+      const original = n.textContent;
+      n.innerHTML = '';
+      n.dataset.obfReady = '1';
+      spans = [];
+      for (let k = 0; k < original.length; k++) {
+        const ch = original[k];
+
+        // измеряем ширину оригинального символа
+        const measure = document.createElement('span');
+        measure.style.display = 'inline-block';
+        measure.style.visibility = 'hidden';
+        measure.style.whiteSpace = 'pre';
+        measure.textContent = ch;
+        n.appendChild(measure);
+        const w = measure.getBoundingClientRect().width;
+        measure.remove();
+
+        const c = document.createElement('span');
+        c.className = 'obf-c';
+        c.style.display = 'inline-block';
+        c.style.width = w + 'px';
+        c.style.overflow = 'hidden';
+        c.style.textAlign = 'center';
+        c.style.whiteSpace = 'pre';
+        c.textContent = randomObfChar();
+        n.appendChild(c);
+        spans.push(c);
+      }
+    }
+    items.push({ spans });
+  });
+
+  const update = () => {
+    items.forEach(({ spans }) => {
+      spans.forEach(c => { c.textContent = randomObfChar(); });
+    });
+  };
+
+  // Сразу заменяем содержимое — не ждём первого тика
+  update();
+  const timer = setInterval(update, 50);
+  obfTimers.push(timer);
+}
+
+function renderFormatting(text, baseColor) {
+  text = text.replace(/\u00a7/g, '&');
+  let color = baseColor;
+  let bold = false, italic = false, underline = false, strike = false, obf = false;
+  let out = '', buf = '';
+  function flush() {
+    if (!buf) return;
+    const esc = buf.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const style = ['color:' + color];
+    if (bold) style.push('font-weight:bold');
+    if (italic) style.push('font-style:italic');
+    const deco = [];
+    if (underline) deco.push('underline');
+    if (strike) deco.push('line-through');
+    if (deco.length) style.push('text-decoration:' + deco.join(' '));
+    const cls = obf ? ' class="obf"' : '';
+    out += '<span' + cls + ' style="' + style.join(';') + '">' + esc + '</span>';
+    buf = '';
+  }
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '&' && i + 1 < text.length) {
+      const n = text[i+1].toLowerCase();
+      if (n === '&') { buf += '&'; i++; continue; }
+      if ('0123456789abcdef'.indexOf(n) >= 0) { flush(); color = FORMAT_COLORS[n]; bold = italic = underline = strike = false; obf = false; i++; continue; }
+      if (n === 'l') { flush(); bold = true; i++; continue; }
+      if (n === 'o') { flush(); italic = true; i++; continue; }
+      if (n === 'n') { flush(); underline = true; i++; continue; }
+      if (n === 'm') { flush(); strike = true; i++; continue; }
+      if (n === 'k') { flush(); obf = true; i++; continue; }
+      if (n === 'r') { flush(); color = baseColor; bold = italic = underline = strike = false; obf = false; i++; continue; }
+    }
+    buf += c;
+  }
+  flush();
+  return out;
+}
+
+const subtitleArea = document.getElementById('subtitleArea');
+
+function sleep(ms) {
+  return new Promise(res => setTimeout(res, Math.max(ms, 0)));
+}
+
+function computeTypingDuration(steps) {
+  let t = 0;
+  for (const s of steps) t += s.delayAfter;
+  return t;
+}
+
+function getSoundUrl(soundId) {
+  if (!soundId) return null;
+  if (soundId.startsWith('hl2_subtitles:')) {
+    const name = soundId.substring('hl2_subtitles:'.length);
+    const sf = soundFiles.find(s => s.name === name);
+    if (sf && sf.url) return sf.url;
+  }
+  return null;
+}
+
+let lastPreviewSoundMs = 0;
+function playSegmentSound(seg) {
+  const now = performance.now();
+  if (now - lastPreviewSoundMs < 30) return;
+  lastPreviewSoundMs = now;
+  const url = getSoundUrl(seg.sound);
+  if (!url) return;
+  try {
+    const a = new Audio(url);
+    a.volume = Math.min(1, Math.max(0, parseFloat(seg.volume) || 1));
+    a.playbackRate = Math.min(4, Math.max(0.1, parseFloat(seg.pitch) || 1));
+    a.play().catch(() => {});
+  } catch (e) {}
+}
+
+function showPreview(i) {
+  state.previewIndex = i;
+  updatePreview(i);
+}
+
+function updatePreview(i) {
+  stopObfuscation();
+  subtitleArea.innerHTML = '';
+  if (i == null || i < 0 || i >= segments.length) i = 0;
+  const seg = segments[i];
+  const baseColor = colorNameToHex(seg.color) || '#FFFFFF';
+  const stripped = seg.text.replace(/\{p:[^}]*\}/g, '').replace(/\{fast\}/g, '').replace(/\{\/fast\}/g, '');
+  const box = document.createElement('div');
+  box.className = 'subtitle-box';
+  box.innerHTML = renderFormatting(stripped || '—', baseColor);
+  subtitleArea.appendChild(box);
+  startObfuscation(box);
+}
+
+let animToken = 0;
+
+function playAnimation() {
+  animToken++;
+  const token = animToken;
+  stopObfuscation();
+  subtitleArea.innerHTML = '';
+
+  let cumulative = 0;
+  segments.forEach(seg => {
+    const delay = cumulative;
+    const steps = parseScript(seg.text, seg.speed);
+    const typing = computeTypingDuration(steps);
+    runSegment(seg, steps, delay, token);
+    cumulative += typing + (parseFloat(seg.breakAfter) || 0);
+  });
+}
+
+async function runSegment(seg, steps, delayMs, token) {
+  await sleep(delayMs * 1000);
+  if (token !== animToken) return;
+
+  const baseColor = colorNameToHex(seg.color) || '#FFFFFF';
+  const box = document.createElement('div');
+  box.className = 'subtitle-box';
+  subtitleArea.appendChild(box);
+
+  if (seg.mode === 'once') playSegmentSound(seg);
+
+  let visible = '';
+  for (const st of steps) {
+    if (token !== animToken) return;
+    visible += st.append;
+    if (st.delayAfter > 0) {
+      stopObfuscation();
+      box.innerHTML = renderFormatting(visible, baseColor);
+      startObfuscation(box);
+      await sleep(st.delayAfter * 1000);
+      if (token !== animToken) return;
+      if (st.visible && seg.mode === 'each') playSegmentSound(seg);
+    }
+  }
+  stopObfuscation();
+  box.innerHTML = renderFormatting(visible, baseColor);
+  startObfuscation(box);
+
+  await sleep((parseFloat(seg.duration) || 0) * 1000);
+  if (token !== animToken) return;
+
+  box.style.transition = 'opacity 1s';
+  box.style.opacity = '0';
+  await sleep(1000);
+  if (token !== animToken) return;
+  box.remove();
+}
+
+function escapeCmdText(t) {
+  return t.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+function fmtNum(n, dp) {
+  return Number(n).toFixed(dp).replace(/\.?0+$/, '') || '0';
+}
+
+function generate() {
+  if (segments.length === 0) {
+    document.getElementById('output').value = '';
+    document.getElementById('outputCB').value = '';
+    return;
+  }
+
+  const base = segments[0];
+  const parts = [];
+
+  segments.forEach((seg, i) => {
+    if (i > 0) {
+      const diffs = [];
+      if (String(seg.color).toLowerCase() !== String(base.color).toLowerCase()) diffs.push(`color=${seg.color}`);
+      if (seg.sound !== base.sound) diffs.push(`sound=${seg.sound}`);
+      if (parseFloat(seg.pitch) !== parseFloat(base.pitch)) diffs.push(`pitch=${seg.pitch}`);
+      if (parseFloat(seg.volume) !== parseFloat(base.volume)) diffs.push(`volume=${seg.volume}`);
+      if (seg.mode !== base.mode) diffs.push(`mode=${seg.mode}`);
+      if (parseFloat(seg.speed) !== parseFloat(base.speed)) diffs.push(`speed=${seg.speed}`);
+      if (parseFloat(seg.duration) !== parseFloat(base.duration)) diffs.push(`dur=${seg.duration}`);
+      if (parseFloat(seg.delay) !== parseFloat(base.delay)) diffs.push(`delay=${seg.delay}`);
+      if (diffs.length) parts.push(`{cfg:${diffs.join(',')}}`);
+    }
+
+    parts.push(seg.text);
+
+    if (i < segments.length - 1) {
+      const ba = parseFloat(seg.breakAfter) || 0;
+      parts.push(ba <= 0 ? '{break}' : `{break:${fmtNum(ba, 2)}}`);
+    }
+  });
+
+  const mergedText = '"' + escapeCmdText(parts.join('')) + '"';
+
+  const speed    = fmtNum(base.speed, 2);
+  const duration = fmtNum(base.duration, 2);
+  const delay    = fmtNum(base.delay, 2);
+  const color    = base.color;
+  const sound    = base.sound || 'ui.button.click';
+  const pitch    = fmtNum(base.pitch, 2);
+  const volume   = fmtNum(base.volume, 3);
+  const mode     = base.mode;
+
+  const isDefaultMain = (speed === '0.05' && duration === '3' && delay === '0'
+                    && String(color).toLowerCase() === 'white'
+                    && sound === 'ui.button.click'
+                    && pitch === '1.8' && volume === '0.15');
+  const needArgs = !isDefaultMain || mode !== 'each';
+  const tailBase = needArgs ? ` ${speed} ${duration} ${delay} ${color} ${sound} ${pitch} ${volume}` : '';
+  const tailWithMode = (mode !== 'each')
+      ? (needArgs ? tailBase + ' ' + mode : ` 0.05 3 0 white ${sound} 1.8 0.15 ${mode}`)
+      : tailBase;
+
+  const targets = document.getElementById('targets').value;
+  document.getElementById('output').value   = `/hl2_subtitles send ${targets} ${mergedText}${tailWithMode}`;
+  document.getElementById('outputCB').value = `/hl2_subtitles send @a ${mergedText}${tailWithMode}`;
+}
+
+document.getElementById('targets').addEventListener('change', generate);
+
+function copyCmd(btn) {
+  const t = document.getElementById('output');
+  t.select();
+  document.execCommand('copy');
+  const old = btn.textContent;
+  btn.textContent = '✅ Скопировано';
+  setTimeout(() => btn.textContent = old, 1200);
+}
+
+// =====================================================================
+//  РЕСУРСПАК + АВТОПОДСКАЗКИ
+// =====================================================================
+const soundFiles = [];
+const datalistEl = document.getElementById('soundDatalist');
+VANILLA_SOUNDS.forEach(addToDatalist);
+
+function addToDatalist(name) {
+  if (Array.from(datalistEl.options).some(o => o.value === name)) return;
+  const opt = document.createElement('option');
+  opt.value = name;
+  datalistEl.appendChild(opt);
+}
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const soundListEl = document.getElementById('soundList');
+
+dropZone.setAttribute('data-tip', TIPS.dropZone);
+
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault(); dropZone.classList.add('hover');
+}));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, e => {
+  e.preventDefault(); dropZone.classList.remove('hover');
+}));
+dropZone.addEventListener('click', e => { if (e.target.tagName !== 'INPUT') fileInput.click(); });
+dropZone.addEventListener('drop', e => addSoundFiles(e.dataTransfer.files));
+fileInput.addEventListener('change', e => { addSoundFiles(e.target.files); fileInput.value = ''; });
+
+function addSoundFiles(fileList) {
+  const promises = [];
+  for (const f of fileList) {
+    const n = f.name.toLowerCase();
+    if (n.endsWith('.ogg')) {
+      const base = sanitizeSoundName(f.name.replace(/\.ogg$/i, ''));
+      soundFiles.push({
+        id: 's_' + Math.random().toString(36).slice(2),
+        origName: f.name,
+        name: uniqueSoundName(base),
+        file: f,
+        url: URL.createObjectURL(f),
+        category: 'voice'
+      });
+    } else if (n.endsWith('.zip')) {
+      promises.push(importZipSounds(f));
+    } else {
+      alert('Только .ogg или .zip. Пропускаю: ' + f.name);
+    }
+  }
+  renderSoundList();
+  updateSoundHint();
+  Promise.all(promises).then(results => {
+    const allNames = [];
+    results.forEach(names => names.forEach(n => allNames.push(n)));
+    allNames.forEach(n => addToDatalist(n));
+    if (allNames.length) alert('Загружено звуков из ресурспаков: ' + allNames.length);
+  });
+}
+
+async function importZipSounds(zipFile) {
+  try {
+    const zip = await JSZip.loadAsync(zipFile);
+    const found = [];
+    const soundsJsonFiles = [];
+    zip.forEach((path, entry) => {
+      if (!entry.dir && /^assets\/[^/]+\/sounds\.json$/i.test(path)) {
+        soundsJsonFiles.push({ path, entry });
+      }
+    });
+    for (const { path, entry } of soundsJsonFiles) {
+      const ns = path.split('/')[1];
+      const content = await entry.async('text');
+      try {
+        const json = JSON.parse(content);
+        for (const key of Object.keys(json)) found.push(ns + ':' + key);
+      } catch (e) { console.warn(e); }
+    }
+    return found;
+  } catch (e) {
+    alert('Не удалось прочитать zip: ' + e.message);
+    return [];
+  }
+}
+
+function sanitizeSoundName(n) {
+  return n.toLowerCase().replace(/[^a-z0-9_\-]/g, '_').replace(/^_+|_+$/g, '') || 'sound';
+}
+function uniqueSoundName(n) {
+  let candidate = n, i = 2;
+  const used = new Set(soundFiles.map(s => s.name));
+  while (used.has(candidate)) { candidate = n + '_' + i; i++; }
+  return candidate;
+}
+
+function renderSoundList() {
+  soundListEl.innerHTML = '';
+  if (soundFiles.length === 0) {
+    soundListEl.innerHTML = '<div class="empty-list">Пока нет звуков.</div>';
+    return;
+  }
+  soundFiles.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'sound-row';
+
+    const nameDiv = document.createElement('div');
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = s.name;
+    nameInput.setAttribute('data-tip', TIPS.soundName);
+    nameInput.oninput = (e) => {
+      s.name = sanitizeSoundName(e.target.value);
+      addToDatalist('hl2_subtitles:' + s.name);
+      updateSoundHint();
+    };
+    const orig = document.createElement('div');
+    orig.className = 'orig';
+    orig.textContent = s.origName + ' · ' + (s.file.size/1024).toFixed(1) + ' KB';
+    nameDiv.appendChild(nameInput); nameDiv.appendChild(orig);
+
+    const catSelect = document.createElement('select');
+    catSelect.setAttribute('data-tip', TIPS.soundCategory);
+    ['voice','master','player','neutral','ambient','block','hostile','music','record','weather'].forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      if (c === s.category) opt.selected = true;
+      catSelect.appendChild(opt);
+    });
+    catSelect.onchange = (e) => { s.category = e.target.value; };
+
+    const playBtn = document.createElement('button');
+    playBtn.className = 'play'; playBtn.textContent = '▶';
+    playBtn.setAttribute('data-tip', TIPS.playSound);
+    playBtn.onclick = () => playSoundPreview(s);
+
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '✕';
+    delBtn.setAttribute('data-tip', TIPS.delSound);
+    delBtn.onclick = () => {
+      const idx = soundFiles.indexOf(s);
+      if (idx >= 0) soundFiles.splice(idx, 1);
+      renderSoundList(); updateSoundHint();
+    };
+
+    row.appendChild(nameDiv); row.appendChild(catSelect);
+    row.appendChild(playBtn); row.appendChild(delBtn);
+    soundListEl.appendChild(row);
+
+    addToDatalist('hl2_subtitles:' + s.name);
+  });
+}
+
+let currentPreviewAudio = null;
+function playSoundPreview(s) {
+  if (currentPreviewAudio) { try { currentPreviewAudio.pause(); } catch(e){} currentPreviewAudio = null; }
+  const url = URL.createObjectURL(s.file);
+  const audio = new Audio(url);
+  audio.play().then(() => {
+    currentPreviewAudio = audio;
+    audio.onended = () => { URL.revokeObjectURL(url); if (currentPreviewAudio === audio) currentPreviewAudio = null; };
+  }).catch(err => {
+    alert('Не удалось воспроизвести в браузере: ' + err.message);
+    URL.revokeObjectURL(url);
+  });
+}
+
+function updateSoundHint() {
+  const el = document.getElementById('soundCmdHint');
+  if (soundFiles.length === 0) { el.value = 'Сначала добавь хотя бы один .ogg-файл.'; return; }
+  el.value = soundFiles.map(s => `hl2_subtitles:${s.name}`).join('\n');
+}
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function dosDT(d) {
+  return {
+    time: ((d.getHours() & 0x1F) << 11) | ((d.getMinutes() & 0x3F) << 5) | ((Math.floor(d.getSeconds()/2)) & 0x1F),
+    date: (((d.getFullYear() - 1980) & 0x7F) << 9) | (((d.getMonth() + 1) & 0x0F) << 5) | (d.getDate() & 0x1F)
+  };
+}
+function makeZip(files) {
+  const enc = new TextEncoder();
+  const { time, date } = dosDT(new Date());
+  const local = [], central = [];
+  let offset = 0;
+  for (const f of files) {
+    const nameBytes = enc.encode(f.name);
+    const data = f.data instanceof Uint8Array ? f.data : enc.encode(f.data);
+    const crc = crc32(data);
+    const size = data.length;
+    const lh = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, time, true); lv.setUint16(12, date, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, size, true); lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true); lv.setUint16(28, 0, true);
+    lh.set(nameBytes, 30); local.push(lh, data);
+    const ch = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true); cv.setUint16(10, 0, true); cv.setUint16(12, time, true);
+    cv.setUint16(14, date, true); cv.setUint32(16, crc, true); cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true); cv.setUint16(28, nameBytes.length, true); cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true); cv.setUint16(34, 0, true); cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true); cv.setUint32(42, offset, true);
+    ch.set(nameBytes, 46); central.push(ch);
+    offset += lh.length + data.length;
+  }
+  let cSize = 0;
+  for (const p of central) cSize += p.length;
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(4, 0, true); ev.setUint16(6, 0, true);
+  ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, cSize, true); ev.setUint32(16, offset, true); ev.setUint16(20, 0, true);
+  return new Blob([...local, ...central, eocd], { type: 'application/zip' });
+}
+
+async function downloadPack() {
+  if (soundFiles.length === 0) { alert('Добавь хотя бы один .ogg.'); return; }
+  const names = new Set();
+  for (const s of soundFiles) {
+    if (names.has(s.name)) { alert('Дубликат имени: ' + s.name); return; }
+    names.add(s.name);
+  }
+  const packName = document.getElementById('packName').value.trim() || 'resourses';
+  const packDesc = document.getElementById('packDesc').value.trim() || 'HL2 Subtitles sounds';
+  const PACK_FORMAT = 6;
+
+  const files = [];
+  files.push({ name: 'pack.mcmeta',
+    data: JSON.stringify({ pack: { pack_format: PACK_FORMAT, description: packDesc } }, null, 2) });
+  const soundsJson = {};
+  for (const s of soundFiles) {
+    soundsJson[s.name] = { category: s.category, sounds: [{ name: 'hl2_subtitles:' + s.name, stream: false }] };
+    const u8 = new Uint8Array(await s.file.arrayBuffer());
+    files.push({ name: 'assets/hl2_subtitles/sounds/' + s.name + '.ogg', data: u8 });
+  }
+  files.push({ name: 'assets/hl2_subtitles/sounds.json', data: JSON.stringify(soundsJson, null, 2) });
+
+  const blob = makeZip(files);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = packName.replace(/[^a-zA-Z0-9_\- ]/g, '').trim().replace(/\s+/g, '_') + '.zip';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+renderSegments();
+updatePreview(0);
+generate();
+updateSoundHint();
+</script>
+</body>
+</html>

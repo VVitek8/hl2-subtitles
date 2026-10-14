@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[36,)"
+license="Academic Free License v3.0"
+
+[[mods]]
+modId="hl2_subtitles"
+version="1.0.0"
+displayName="hl2 subtitles"
+credits="cool mod"
+displayURL="https://mcreator.net"
+authors="Vitek8"
+description='''
+hl2 styled subtitles
+'''
+
+[[dependencies.hl2_subtitles]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.16.5]"
+    ordering="NONE"
+    side="BOTH"
+
+
+
+

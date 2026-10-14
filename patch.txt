@@ -1,0 +1,26 @@
+@@@FILE@@@ hl2_subtitle_generator.html
+@@@IF-NOT@@@
+// Без overflow: hidden — inline-block выравнивается по базовой линии текста
+@@@FIND@@@
+        const c = document.createElement('span');
+        c.className = 'obf-c';
+        c.style.display = 'inline-block';
+        c.style.width = w + 'px';
+        c.style.overflow = 'hidden';
+        c.style.textAlign = 'center';
+        c.style.whiteSpace = 'pre';
+        c.textContent = randomObfChar();
+        n.appendChild(c);
+        spans.push(c);
+@@@REPLACE@@@
+        const c = document.createElement('span');
+        c.className = 'obf-c';
+        // Без overflow: hidden — inline-block выравнивается по базовой линии текста
+        c.style.display = 'inline-block';
+        c.style.width = w + 'px';
+        c.style.textAlign = 'center';
+        c.style.whiteSpace = 'pre';
+        c.textContent = randomObfChar();
+        n.appendChild(c);
+        spans.push(c);
+@@@END@@@
